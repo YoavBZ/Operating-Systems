@@ -101,10 +101,11 @@ extern int sys_sbrk(void);
 extern int sys_sleep(void);
 extern int sys_unlink(void);
 extern int sys_wait(void);
+extern int sys_detach(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
 
-static int (*syscalls[])(void) = {
+static int (*syscalls[])(void) = { //TODO: check if need to support arguments
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
@@ -126,6 +127,7 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_detach]  sys_detach,
 };
 
 void

@@ -16,15 +16,22 @@ sys_fork(void)
 int
 sys_exit(void)
 {
-  exit();
+  exit(0);
   return 0;  // not reached
 }
 
 int
 sys_wait(void)
 {
-  return wait();
+  return wait(null);
 }
+
+int
+sys_detach(int pid)
+{
+  return detach(pid);
+}
+
 
 int
 sys_kill(void)
