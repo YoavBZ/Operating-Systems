@@ -19,7 +19,6 @@
 
 /*    WE ADDED    */
 
-
 char*
 strncpy(char *s, const char *t, int n)
 {
@@ -40,13 +39,10 @@ char* getNextPath(char* buff ){
     buff++;
     len++;
   }
-  if(*buff ==':' ){
-    *buff = '\0';
-  }
   buff = buff - len;
   char* returnedString = (char*)malloc(len+1);
   returnedString[len] = '\0';
-  strcpy(returnedString, buff);
+  strncpy(returnedString, buff,len);
   return returnedString;
 }
 
@@ -141,30 +137,35 @@ runcmd(struct cmd *cmd)
       exit();
     exec(ecmd->argv[0], ecmd->argv);
 
-/* if we are here , normal call failed */
-/* path change */
-uint n;
-char buff[MAX_PATH_SIZE];
-int open_fd = open("/path", O_RDWR);
-if(open_fd < 0){
-    close(open_fd);
-    printf(0, "problem to open path");
-}
+    /* if we are here , normal call failed */
+    /* path change */
+    uint n;
+    if(*ecmd->argv[0] == '/'){ // check for absolute path which already handled in line 138
+      printf(2, "exec %s failed\n", ecmd->argv[0]);
+      break;
+    }
+    char buff[MAX_PATH_SIZE];
+    int open_fd = open("/path", O_RDWR);
+    if(open_fd < 0){
+        close(open_fd);
+        printf(0, "problem to open path");
+    }
 
-while((n = read(open_fd, buff, sizeof(buff))));
-char* buffPointer = buff;
-while(*buffPointer != null){
-  char* nextPath = getNextPath(buffPointer);
-  uint lenA = strlen(nextPath);
-  uint lenB = strlen(ecmd->argv[0]);
-  char result[lenA + lenB + 1];
-  char* nextFinalPath = strconcat(nextPath, ecmd->argv[0] ,result) ,lenA ,lenB P);
-  free(nextPath);
-  exec(nextFinalPath, ecmd->argv);
-  /* if we are here , exec call failed */
-  buffPointer = movePathPointer(buffPointer); 
-
-}
+    while((n = read(open_fd, buff, sizeof(buff))));
+    buff[strlen(buff)-1] = '\0';
+    char* buffPointer = buff;
+    while(buffPointer != null){
+      char* nextPath = getNextPath(buffPointer);
+      uint lenA = strlen(nextPath);
+      uint lenB = strlen(ecmd->argv[0]);
+      char result[lenA + lenB + 1];
+      strconcat(nextPath, ecmd->argv[0] ,result ,lenA ,lenB);
+      free(nextPath);
+      printf(1, "%s\n" ,result);
+      exec(result, ecmd->argv);
+      /* if we are here , exec call failed */
+      buffPointer = movePathPointer(buffPointer); 
+    }
 
     printf(2, "exec %s failed\n", ecmd->argv[0]);
     break;
