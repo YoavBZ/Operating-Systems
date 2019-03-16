@@ -25,6 +25,9 @@ struct {
 static struct proc *initproc;
 
 int nextpid = 1;
+int currPolicy = ROUND_ROBIN;
+
+
 extern void forkret(void);
 extern void trapret(void);
 
@@ -92,61 +95,61 @@ allocproc(void)
     if(p->state == UNUSED)
       goto found;
 
-  release(&ptable.lock);
-  return 0;
+    release(&ptable.lock);
+    return 0;
 
-found:
-  p->state = EMBRYO;
-  p->pid = nextpid++;
+    found:
+    p->state = EMBRYO;
+    p->pid = nextpid++;
 
-  release(&ptable.lock);
+    release(&ptable.lock);
 
   // Allocate kernel stack.
-  if((p->kstack = kalloc()) == 0){
-    p->state = UNUSED;
-    return 0;
-  }
-  sp = p->kstack + KSTACKSIZE;
+    if((p->kstack = kalloc()) == 0){
+      p->state = UNUSED;
+      return 0;
+    }
+    sp = p->kstack + KSTACKSIZE;
 
   // Leave room for trap frame.
-  sp -= sizeof *p->tf;
-  p->tf = (struct trapframe*)sp;
+    sp -= sizeof *p->tf;
+    p->tf = (struct trapframe*)sp;
 
   // Set up new context to start executing at forkret,
   // which returns to trapret.
-  sp -= 4;
-  *(uint*)sp = (uint)trapret;
+    sp -= 4;
+    *(uint*)sp = (uint)trapret;
 
-  sp -= sizeof *p->context;
-  p->context = (struct context*)sp;
-  memset(p->context, 0, sizeof *p->context);
-  p->context->eip = (uint)forkret;
+    sp -= sizeof *p->context;
+    p->context = (struct context*)sp;
+    memset(p->context, 0, sizeof *p->context);
+    p->context->eip = (uint)forkret;
 
-  return p;
-}
+    return p;
+  }
 
 //PAGEBREAK: 32
 // Set up first user process.
-void
-userinit(void)
-{
-  struct proc *p;
-  extern char _binary_initcode_start[], _binary_initcode_size[];
+  void
+  userinit(void)
+  {
+    struct proc *p;
+    extern char _binary_initcode_start[], _binary_initcode_size[];
 
-  p = allocproc();
-  
-  initproc = p;
-  if((p->pgdir = setupkvm()) == 0)
-    panic("userinit: out of memory?");
-  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
-  p->sz = PGSIZE;
-  memset(p->tf, 0, sizeof(*p->tf));
-  p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
-  p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
-  p->tf->es = p->tf->ds;
-  p->tf->ss = p->tf->ds;
-  p->tf->eflags = FL_IF;
-  p->tf->esp = PGSIZE;
+    p = allocproc();
+
+    initproc = p;
+    if((p->pgdir = setupkvm()) == 0)
+      panic("userinit: out of memory?");
+    inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+    p->sz = PGSIZE;
+    memset(p->tf, 0, sizeof(*p->tf));
+    p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+    p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+    p->tf->es = p->tf->ds;
+    p->tf->ss = p->tf->ds;
+    p->tf->eflags = FL_IF;
+    p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
@@ -157,9 +160,13 @@ userinit(void)
   // writes to be visible, and the lock is also needed
   // because the assignment might not be atomic.
   acquire(&ptable.lock);
-
+  if(!pq.put(p)){
+    panic("add to pq has a problem");
+  }
+  if(!rrq.enqueue(p)){
+    panic("add to rrq has a problem");
+  }
   p->state = RUNNABLE;
-
   release(&ptable.lock);
 }
 
@@ -216,39 +223,89 @@ fork(void)
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
+    np->cwd = idup(curproc->cwd);
 
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+    safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
-  pid = np->pid;
+    pid = np->pid;
 
-  acquire(&ptable.lock);
-
-  np->state = RUNNABLE;
-
-  release(&ptable.lock);
-
-  return pid;
-}
-
-int
-detach(int pid){
-  struct proc *curproc = myproc();
-  struct proc *p;
-  acquire(&ptable.lock);
-  int returnValue = 0;
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid ){
-      if(p->parent == curproc){
-        p->parent = initproc;
-      } else {
-        returnValue = -1;
-      }
-      break;
+    acquire(&ptable.lock);
+    if(!pq.put(p)){
+      panic("add to pq has a problem");
     }
+    if(!rrq.enqueue(p)){
+      panic("add to rrq has a problem");
+    }
+    np->state = RUNNABLE;
+    np->priority = 5;
+    long long * acc ;
+    boolean empty = pq.getMinAccumulator(acc);
+    if(!empty){
+      np->accumulator = 0;
+    };
+    else{
+      np->accumulator = *acc;
+    }
+
+    release(&ptable.lock);
+
+    return pid;
+  }
+
+  int
+  detach(int pid){
+    struct proc *curproc = myproc();
+    struct proc *p;
+    acquire(&ptable.lock);
+    int returnValue = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->pid == pid ){
+        if(p->parent == curproc){
+          p->parent = initproc;
+        } else {
+          returnValue = -1;
+        }
+        break;
+      }
+    }
+    release(&ptable.lock);
+    return returnValue;
+  }
+
+
+  void
+policy(int policy){ //1 - round robin , 2 - priority , 3 - extended priority
+  if(policy < 1 || policy > 3){
+    panic("bad policy choise");
+  }
+  acquire(&ptable.lock);
+  if(!policy){
+    pq.switchToRoundRobinPolicy();
+  }
+  else{
+    rrq.switchToRoundRobinPolicy();
   }
   release(&ptable.lock);
-  return returnValue;
+  currPolicy = policy;
+}
+
+void
+priority(int priority){
+  struct proc *curproc = myproc();
+  if(currPolicy != PRIORITY){
+    if(priority < 1 || priority > 10){
+      panic ("bad priority");
+    }
+  }
+  else{
+     if(priority < 0 || priority > 10){
+      panic ("bad priority");
+    }
+
+  }
+  acquire(&ptable.lock);
+  curproc->priority = priority;
+  release(&ptable.lock);
 }
 
 // Exit the current process.  Does not return.
@@ -330,20 +387,20 @@ wait(int* status)
         release(&ptable.lock);
         // updating status to the exit status of the child.
         if(status != null){
-            *status = p->exitStatus;
+          *status = p->exitStatus;
         }
         else{
             status = null; //TODO: ask someone
+          }
+          return pid;
         }
-        return pid;
       }
-    }
 
     // No point waiting if we don't have any children.
-    if(!havekids || curproc->killed){
-      release(&ptable.lock);
-      return -1;
-    }
+      if(!havekids || curproc->killed){
+        release(&ptable.lock);
+        return -1;
+      }
 
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
@@ -368,30 +425,54 @@ scheduler(void)
   for(;;){
     // Enable interrupts on this processor.
     sti();
+    acquire(&ptable.lock);
+    /* scheduler change is here */
+    switch(currPolicy){
+      case ROUND_ROBIN :
+      if(!rrq.isEmpty()){
+        p = rrq.dequeue();
+      } 
+      break;
+      case PRIORITY:
+      p = pq.extractMin();
+      break;
+
+      case EXTENDED_PRIORITY:
+
+      break;
+      deafult:
+      //should never happen
+      break;
+    }
 
     // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+    c->proc = p;
+    switchuvm(p);
+    if(!rpholder.add(p)){
+      panic("add to rp has a problem");
+    }
+    if(!rrq.dequeue(p)){
+      panic("remove from rrq has a problem");
+    }
+    if(!pq.extractProc(p)){
+      panic("remove from pq has a problem");
+    }
+    p->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+    swtch(&(c->scheduler), p->context);
+    switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
-
+    c->proc = 0;
   }
+  release(&ptable.lock);
+
+}
 }
 
 // Enter scheduler.  Must hold only ptable.lock
@@ -425,7 +506,18 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE;
+  struct proc * p = myproc();
+  if(!rrq.enqueue(p)){
+    panic("add to rrq has a problem");
+  }
+  if(!pq.put(p)){
+    panic("add to pq has a problem");
+  }
+  if(!rpholder.remove(p)){
+    panic("remove from rpholder has a problem");
+  }
+  p->state = RUNNABLE;
+  p->accumulator += p->priority;
   sched();
   release(&ptable.lock);
 }
@@ -499,75 +591,89 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
-}
+      if(!rrq.enqueue(p)){
+        panic("add to rrq has a problem");
+      }
+      if(!pq.put(p)){
+        panic("add to pq has a problem");
+      }
+    }
+  }
 
 // Wake up all processes sleeping on chan.
-void
-wakeup(void *chan)
-{
-  acquire(&ptable.lock);
-  wakeup1(chan);
-  release(&ptable.lock);
-}
+  void
+  wakeup(void *chan)
+  {
+    acquire(&ptable.lock);
+    wakeup1(chan);
+    release(&ptable.lock);
+  }
 
 // Kill the process with the given pid.
 // Process won't exit until it returns
 // to user space (see trap in trap.c).
-int
-kill(int pid)
-{
-  struct proc *p;
+  int
+  kill(int pid)
+  {
+    struct proc *p;
 
-  acquire(&ptable.lock);
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid){
-      p->killed = 1;
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->pid == pid){
+        p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
-        p->state = RUNNABLE;
-      release(&ptable.lock);
-      return 0;
+        if(p->state == SLEEPING){
+          if(!rrq.enqueue(p)){
+            panic("add to rrq has a problem");
+          }
+          if(!pq.put(p)){
+            panic("add to rrq has a problem");
+          }
+          p->state = RUNNABLE;
+        }
+        release(&ptable.lock);
+        return 0;
+      }
     }
+    release(&ptable.lock);
+    return -1;
   }
-  release(&ptable.lock);
-  return -1;
-}
 
 //PAGEBREAK: 36
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
-void
-procdump(void)
-{
-  static char *states[] = {
-  [UNUSED]    "unused",
-  [EMBRYO]    "embryo",
-  [SLEEPING]  "sleep ",
-  [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
-  [ZOMBIE]    "zombie"
-  };
-  int i;
-  struct proc *p;
-  char *state;
-  uint pc[10];
+  void
+  procdump(void)
+  {
+    static char *states[] = {
+      [UNUSED]    "unused",
+      [EMBRYO]    "embryo",
+      [SLEEPING]  "sleep ",
+      [RUNNABLE]  "runble",
+      [RUNNING]   "run   ",
+      [ZOMBIE]    "zombie"
+    };
+    int i;
+    struct proc *p;
+    char *state;
+    uint pc[10];
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->state == UNUSED)
-      continue;
-    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-      state = states[p->state];
-    else
-      state = "???";
-    cprintf("%d %s %s", p->pid, state, p->name);
-    if(p->state == SLEEPING){
-      getcallerpcs((uint*)p->context->ebp+2, pc);
-      for(i=0; i<10 && pc[i] != 0; i++)
-        cprintf(" %p", pc[i]);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      cprintf("%d %s %s", p->pid, state, p->name);
+      if(p->state == SLEEPING){
+        getcallerpcs((uint*)p->context->ebp+2, pc);
+        for(i=0; i<10 && pc[i] != 0; i++)
+          cprintf(" %p", pc[i]);
+      }
+      cprintf("\n");
     }
-    cprintf("\n");
   }
-}

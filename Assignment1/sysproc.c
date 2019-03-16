@@ -27,11 +27,34 @@ sys_wait(void)
 }
 
 int
-sys_detach(int pid)
+sys_detach(void)
 {
+  int pid;
+
+  if(argint(0, &pid) < 0)
+    return -1;
   return detach(pid);
 }
 
+void
+sys_policy(void)
+{
+  int policy;
+
+  if(argint(0, &policy) < 0)
+    return -1;
+  return policy(policy);
+}
+
+void
+sys_priority(void)
+{
+  int priority;
+
+  if(argint(0, &priority) < 0)
+    return -1;
+  return priority(priority);
+}
 
 int
 sys_kill(void)

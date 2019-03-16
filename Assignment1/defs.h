@@ -107,6 +107,8 @@ int             pipewrite(struct pipe*, char*, int);
 int             cpuid(void);
 void            exit(int);
 int             detach(int);
+void            policy(int);
+void            priority(int);
 int             fork(void);
 int             growproc(int);
 int             kill(int);

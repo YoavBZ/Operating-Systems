@@ -23,7 +23,7 @@ typedef struct PriorityQueue {
 	boolean (*put)(struct proc* p);
 
 	//Stores the value of the minimum accumulator inside the given accumulator pointer.
-	//Returns true iff the queue isn't empty
+	//Returns true if the queue isn't empty
 	boolean (*getMinAccumulator)(long long* accumulator);
 
 	//Extract a process with the minimum accumulator from the priority queue.
