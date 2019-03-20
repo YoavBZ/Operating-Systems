@@ -12,6 +12,11 @@ struct cpu {
   struct proc *proc;           // The process running on this cpu or null
 };
 
+#define ROUND_ROBIN 1
+#define PRIORITY 2
+#define EXTENDED_PRIORITY 3
+
+
 extern struct cpu cpus[NCPU];
 extern int ncpu;
 
@@ -52,6 +57,8 @@ struct proc {
   struct inode *cwd;             // Current directory  
   char name[16];                 // Process name (debugging)
   int exitStatus;                // exit status
+  int priority;                  // priority
+  long long accumulator;         // accumulator
 };
 
 // Process memory is laid out contiguously, low addresses first:
