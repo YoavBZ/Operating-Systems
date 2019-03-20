@@ -36,24 +36,26 @@ sys_detach(void)
   return detach(pid);
 }
 
-void
+int
 sys_policy(void)
 {
-  int policy;
+  int policyValue;
 
-  if(argint(0, &policy) < 0)
+  if(argint(0, &policyValue) < 0)
     return -1;
-  return policy(policy);
+  policy(policyValue);
+  return 0;
 }
 
-void
+int
 sys_priority(void)
 {
-  int priority;
+  int priorityValue;
 
-  if(argint(0, &priority) < 0)
+  if(argint(0, &priorityValue) < 0)
     return -1;
-  return priority(priority);
+  priority(priorityValue);
+  return 0;
 }
 
 int

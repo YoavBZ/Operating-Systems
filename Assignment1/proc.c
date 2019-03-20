@@ -95,10 +95,10 @@ allocproc(void)
     if(p->state == UNUSED)
       goto found;
 
-    release(&ptable.lock);
-    return 0;
+  release(&ptable.lock);
+  return 0;
 
-    found:
+  found:
     p->state = EMBRYO;
     p->pid = nextpid++;
 
@@ -126,30 +126,30 @@ allocproc(void)
     p->context->eip = (uint)forkret;
 
     return p;
-  }
+}
 
 //PAGEBREAK: 32
 // Set up first user process.
-  void
-  userinit(void)
-  {
-    struct proc *p;
-    extern char _binary_initcode_start[], _binary_initcode_size[];
+void
+userinit(void)
+{
+  struct proc *p;
+  extern char _binary_initcode_start[], _binary_initcode_size[];
 
-    p = allocproc();
+  p = allocproc();
 
-    initproc = p;
-    if((p->pgdir = setupkvm()) == 0)
-      panic("userinit: out of memory?");
-    inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
-    p->sz = PGSIZE;
-    memset(p->tf, 0, sizeof(*p->tf));
-    p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
-    p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
-    p->tf->es = p->tf->ds;
-    p->tf->ss = p->tf->ds;
-    p->tf->eflags = FL_IF;
-    p->tf->esp = PGSIZE;
+  initproc = p;
+  if((p->pgdir = setupkvm()) == 0)
+    panic("userinit: out of memory?");
+  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+  p->sz = PGSIZE;
+  memset(p->tf, 0, sizeof(*p->tf));
+  p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+  p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+  p->tf->es = p->tf->ds;
+  p->tf->ss = p->tf->ds;
+  p->tf->eflags = FL_IF;
+  p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
@@ -223,57 +223,58 @@ fork(void)
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
-    np->cwd = idup(curproc->cwd);
 
-    safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+  np->cwd = idup(curproc->cwd);
 
-    pid = np->pid;
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
-    acquire(&ptable.lock);
-    if(!pq.put(p)){
-      panic("add to pq has a problem");
-    }
-    if(!rrq.enqueue(p)){
-      panic("add to rrq has a problem");
-    }
-    np->state = RUNNABLE;
-    np->priority = 5;
-    long long * acc ;
-    boolean empty = pq.getMinAccumulator(acc);
-    if(!empty){
-      np->accumulator = 0;
-    };
-    else{
-      np->accumulator = *acc;
-    }
+  pid = np->pid;
 
-    release(&ptable.lock);
-
-    return pid;
+  acquire(&ptable.lock);
+  if(!pq.put(np)){
+    panic("add to pq has a problem");
+  }
+  if(!rrq.enqueue(np)){
+    panic("add to rrq has a problem");
+  }
+  np->state = RUNNABLE;
+  np->priority = 5;
+  long long * acc = null;
+  boolean empty = pq.getMinAccumulator(acc);
+  if(!empty){
+    np->accumulator = 0;
+  }
+  else{
+    np->accumulator = *acc;
   }
 
-  int
-  detach(int pid){
-    struct proc *curproc = myproc();
-    struct proc *p;
-    acquire(&ptable.lock);
-    int returnValue = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->pid == pid ){
-        if(p->parent == curproc){
-          p->parent = initproc;
-        } else {
-          returnValue = -1;
-        }
-        break;
+  release(&ptable.lock);
+
+  return pid;
+}
+
+int
+detach(int pid){
+  struct proc *curproc = myproc();
+  struct proc *p;
+  acquire(&ptable.lock);
+  int returnValue = 0;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid ){
+      if(p->parent == curproc){
+        p->parent = initproc;
+      } else {
+        returnValue = -1;
       }
+      break;
     }
-    release(&ptable.lock);
-    return returnValue;
   }
+  release(&ptable.lock);
+  return returnValue;
+}
 
 
-  void
+void
 policy(int policy){ //1 - round robin , 2 - priority , 3 - extended priority
   if(policy < 1 || policy > 3){
     panic("bad policy choise");
@@ -283,7 +284,7 @@ policy(int policy){ //1 - round robin , 2 - priority , 3 - extended priority
     pq.switchToRoundRobinPolicy();
   }
   else{
-    rrq.switchToRoundRobinPolicy();
+    rrq.switchToPriorityQueuePolicy();
   }
   release(&ptable.lock);
   currPolicy = policy;
@@ -418,10 +419,10 @@ wait(int* status)
 void
 scheduler(void)
 {
-  struct proc *p;
+  struct proc *p = null;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -429,51 +430,45 @@ scheduler(void)
     /* scheduler change is here */
     switch(currPolicy){
       case ROUND_ROBIN :
-      if(!rrq.isEmpty()){
-        p = rrq.dequeue();
-      } 
-      break;
+        if(!rrq.isEmpty()){
+          p = rrq.dequeue();
+        } 
+        break;
       case PRIORITY:
-      p = pq.extractMin();
-      break;
-
+        p = pq.extractMin();
+        break;
       case EXTENDED_PRIORITY:
-
-      break;
-      deafult:
-      //should never happen
-      break;
+        p = null; //TODO:FIX ME
+        break;
+    
     }
-
-    // Loop over process table looking for process to run.
-
+    if(p != null){
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-    c->proc = p;
-    switchuvm(p);
-    if(!rpholder.add(p)){
-      panic("add to rp has a problem");
-    }
-    if(!rrq.dequeue(p)){
-      panic("remove from rrq has a problem");
-    }
-    if(!pq.extractProc(p)){
-      panic("remove from pq has a problem");
-    }
-    p->state = RUNNING;
+      c->proc = p;
+      switchuvm(p);
+      if(!rpholder.add(p)){
+       panic("add to rp has a problem");
+      }
+      if(!rrq.dequeue(p)){
+        panic("remove from rrq has a problem");
+      }
+      if(!pq.extractProc(p)){
+        panic("remove from pq has a problem");
+      }
+      p->state = RUNNING;
 
-    swtch(&(c->scheduler), p->context);
-    switchkvm();
-
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
       // Process is done running for now.
       // It should have changed its p->state before coming back.
-    c->proc = 0;
+      c->proc = 0;
+    }
+    release(&ptable.lock);
   }
-  release(&ptable.lock);
+}
 
-}
-}
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
