@@ -241,7 +241,6 @@ void LinkedList::append(Link *link) {
 
 	if(isEmpty()) first = link;
 	else last->next = link;
-
 	last = link->getLast();
 }
 

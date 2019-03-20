@@ -59,6 +59,7 @@ struct proc {
   int exitStatus;                // exit status
   int priority;                  // priority
   long long accumulator;         // accumulator
+  long long waitingTime;         // waiting time 
 };
 
 // Process memory is laid out contiguously, low addresses first:
