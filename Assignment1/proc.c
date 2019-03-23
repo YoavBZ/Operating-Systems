@@ -26,7 +26,7 @@ long long getAccumulator(struct proc *p) {
 static struct proc *initproc;
 
 int nextpid = 1;
-int currPolicy = PRIORITY;
+int currPolicy = ROUND_ROBIN;
 int quantumTime = 0;
 
 void
@@ -73,13 +73,13 @@ handleStateChange(struct proc *p, int nState){
           rrq.enqueue(p);
           break;
 
-        case RUNNING:
-          p->state = RUNNING;
-          break;
+        default:
+          p->state = nState;
       }
       break;
 
     case PRIORITY:
+    case EXTENDED_PRIORITY:
       switch (nState){
         case EMBRYO:
           p->state = EMBRYO;
@@ -88,7 +88,7 @@ handleStateChange(struct proc *p, int nState){
           p->pid = nextpid++;
           p->waitingTime = 0;
           break;
-          
+
         case RUNNABLE:
           if (p->state == SLEEPING){
             // Minimizing the process accumulator if switched from SLEEPING to RUNNABLE
@@ -102,14 +102,13 @@ handleStateChange(struct proc *p, int nState){
           }
           p->state = RUNNABLE;
           break;
-
-        case RUNNING:
-          p->state = RUNNING;
-          break;
+          
+        default:
+          p->state = nState;
       }
   }
 
-  // Adding process to RunningProcessesHolder queue if state was changed to RUNNING
+  // Adding process to RunningProcessesHolder queue if state should be changed to RUNNING
   if (nState == RUNNING && !rpholder.add(p)){
     panic("Couldn't add process to rpholder!");
   }
@@ -192,7 +191,7 @@ allocproc(void)
 
     // Allocate kernel stack.
     if((p->kstack = kalloc()) == 0){
-      p->state = UNUSED;
+      handleStateChange(p, UNUSED);
       return 0;
     }
     sp = p->kstack + KSTACKSIZE;
@@ -240,9 +239,6 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-  // p->accumulator = 0;
-  // p->priority = 5;
-  // p->waitingTime = 0;
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -250,17 +246,6 @@ userinit(void)
   acquire(&ptable.lock);
 
   handleStateChange(p, RUNNABLE);
-  // p->state = RUNNABLE;
-  // if(currPolicy == ROUND_ROBIN){
-  //   if(!rrq.enqueue(p)){
-  //     panic("add to rrq has a problem, function:userinit");
-  //   }
-  // }
-  // else{
-  //   if(!pq.put(p)){
-  //     panic("add to pq has a problem, function:userinit");
-  //   }
-  // }
 
   release(&ptable.lock);
 }
@@ -305,7 +290,7 @@ fork(void)
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
-    np->state = UNUSED;
+    handleStateChange(np, UNUSED);
     return -1;
   }
   np->sz = curproc->sz;
@@ -328,36 +313,6 @@ fork(void)
   acquire(&ptable.lock);
     
   handleStateChange(np, RUNNABLE);
-  // np->priority = 5;
-  // np->waitingTime = 0;
-
-  // long long * accRunnable = null;
-  // long long * accRunning = null;
-  // boolean gotPqMin = pq.getMinAccumulator(accRunnable);
-  // boolean gotRpholdetMin = rpholder.getMinAccumulator(accRunning);
-  // if(!gotPqMin && !gotRpholdetMin){
-  //   np->accumulator = 0;
-  // }
-  // if(!gotPqMin && gotRpholdetMin ){
-  //   np->accumulator = *accRunning;
-  // }
-  // if(gotPqMin && !gotRpholdetMin ){
-  //   np->accumulator = *accRunnable;
-  // }
-  // else{
-  //   np->accumulator = (*accRunning > *accRunnable) ? *accRunnable : *accRunning ;
-  // }
-
-  // if(currPolicy == ROUND_ROBIN){
-  //   if(!rrq.enqueue(np)){
-  //     panic("add to rrq has a problem, function:fork");
-  //   }
-  // }
-  // else{
-  //   if(!pq.put(np)){
-  //     panic("add to pq has a problem, function:fork");
-  //   }
-  // }
 
   release(&ptable.lock);
   return pid;
@@ -418,6 +373,9 @@ policy(int policy){
 
 void
 priority(int priority){
+  if (currPolicy == ROUND_ROBIN){
+    panic("Cannot change priority in Round Robin policay");
+  }
   struct proc *curproc = myproc();
   if(currPolicy != PRIORITY){
     if(priority < 1 || priority > 10){
@@ -428,7 +386,6 @@ priority(int priority){
      if(priority < 0 || priority > 10){
       panic ("bad priority");
     }
-
   }
   acquire(&ptable.lock);
   curproc->priority = priority;
@@ -475,14 +432,8 @@ exit(int status)
         wakeup1(initproc);
     }
   }
-
   // Jump into the scheduler, never to return.
-  // if(curproc->state == RUNNING){
-  //   if(!rpholder.remove(p)){
-  //    panic("remove from rpholder has a problem, function:exit");
-  //   }
-  // }
-  curproc->state = ZOMBIE;
+  handleStateChange(curproc, ZOMBIE);
   sched();
   panic("zombie exit");
 
@@ -515,7 +466,7 @@ wait(int* status)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
-        p->state = UNUSED;
+        handleStateChange(p, UNUSED);
         // updating status to the exit status of the child.
         if(status != null){
           *status = p->exitStatus;
@@ -536,15 +487,14 @@ wait(int* status)
   }
 }
 
-
-// This func return the proc that waiting for the longest time , ptable is acquired while calling 
+// Fetches the RUNNABLE process that's waiting for the longest time,
+// ptable lock is acquired while calling 
 struct proc *
-getMaxWaitingTime (){
-  struct proc *maxProc = null;
+getMaxWaitingTime(){
+  struct proc *p, *maxProc = null;
   long long maxValue = 0;
-  struct proc *p;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->waitingTime > maxValue){
+    if(p != null && p->state == RUNNABLE && p->waitingTime >= maxValue){
       maxProc = p;
       maxValue = p->waitingTime;
     }
@@ -581,18 +531,15 @@ scheduler(void)
          p = pq.extractMin();
         break;
       case EXTENDED_PRIORITY:
-        if(quantumTime >= 100){
+        if(quantumTime < 100){
+          p = pq.extractMin();
+        } else {
           quantumTime = 0;
           p = getMaxWaitingTime();
-          pq.extractProc(p);
-        }
-        else{
-          p = pq.extractMin();
-        }
-         if(!pq.extractProc(p)){
-            panic("remove from pq has a problem, function:scheduler");
+          if(!pq.extractProc(p)){
+            panic("Couldn't remove process from pq!");
           }
-        break;
+        }
     }
     
     if(p != null){
@@ -645,36 +592,19 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  struct proc *p = myproc();
-  // struct proc * runnerProc ;
+  struct proc *p, *currproc = myproc();
 
-  // quantumTime ++;
-  // for(runnerProc= ptable.proc; runnerProc < &ptable.proc[NPROC]; runnerProc++){
-  //   if(runnerProc != p){
-  //     runnerProc->waitingTime ++ ;
-  //   }
-  // }
+  // Incrementing the global quantum time and the other waiting processes' waiting time
+  quantumTime++;
+  currproc->waitingTime = 0;
+  for(p= ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p != null && p->state != RUNNING && p != currproc){
+      p->waitingTime++;
+    }
+  }
 
-  handleStateChange(p, RUNNABLE);
-  // p->state = RUNNABLE;
-  // p->waitingTime = 0;
-  // p->accumulator += p->priority;
+  handleStateChange(currproc, RUNNABLE);
   
-  // cprintf("remove now \n");
-  // if(!rpholder.remove(p)){
-  //   panic("remove from rpholder has a problem, function:yield");
-  // }
-  // if(currPolicy == ROUND_ROBIN){
-  //   if(!rrq.enqueue(p)){
-  //     panic("add to rrq has a problem, function:yield");
-  //   }
-  // }
-  // else{
-  //   if(!pq.put(p)){
-  //     panic("add to pq has a problem, function:yield");
-  //   }
-  // }
-
   sched();
   release(&ptable.lock);
 }
@@ -725,7 +655,7 @@ sleep(void *chan, struct spinlock *lk)
   }
   // Go to sleep.
   p->chan = chan;
-  p->state = SLEEPING;
+  handleStateChange(p, SLEEPING);
 
   // if(p->state == RUNNING && !rpholder.remove(p)){
   //   panic("remove from rpholder has a problem, function:sleep");
@@ -761,34 +691,7 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan){
-      // long long * accRunnable = null;
-      // long long * accRunning = null;
-      // boolean gotPqMin = pq.getMinAccumulator(accRunnable);
-      // boolean gotRpholdetMin = rpholder.getMinAccumulator(accRunning);
-      // if(!gotPqMin && !gotRpholdetMin){
-      //   p->accumulator = 0;
-      // }
-      // if(!gotPqMin && gotRpholdetMin ){
-      //   p->accumulator = *accRunning;
-      // }
-      // if(gotPqMin && !gotRpholdetMin ){
-      //   p->accumulator = *accRunnable;
-      // }
-      // else{
-      //   p->accumulator = (*accRunning > *accRunnable) ? *accRunning : *accRunnable ;
-      // }
-      // p->state = RUNNABLE;
       handleStateChange(p, RUNNABLE);
-      // if(currPolicy){
-      //   if(!rrq.enqueue(p)){
-      //     panic("add to rrq has a problem, function:wakeup1");
-      //   }
-      // }
-      // else{
-      //   if(!pq.put(p)){
-      //    panic("add to pq has a problem, function:wakeup1");
-      //   }
-      // }
    }
 }
 
@@ -816,17 +719,6 @@ wakeup1(void *chan)
       // Wake process from sleep if necessary.
         if(p->state == SLEEPING){
           handleStateChange(p, RUNNABLE);
-          // p->state = RUNNABLE;
-          // if(currPolicy == ROUND_ROBIN){
-          //   if(!rrq.enqueue(p)){
-          //     panic("add to rrq has a problem,function:kill");
-          //   }
-          // }
-          // else{
-          //   if(!pq.put(p)){
-          //     panic("add to rrq has a problem,function:kill");
-          //   }
-          // }
         }
         release(&ptable.lock);
         return 0;
