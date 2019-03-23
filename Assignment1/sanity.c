@@ -3,15 +3,19 @@
 
 int main(int argc, char *argv[]){
     int pid, first_status, second_status, third_status;
-    pid = fork();
-    if (pid > 0){
-        first_status = detach(pid);  // status = 0
-        second_status = detach(pid); // status = -1, because this process has already
-        // detached this child, and it doesn’t have
-        // this child anymore.
-        third_status = detach(pid * 2); // status = -1, because this process doesn’t
-                                   // have a child with this pid.
-        printf(3, "Statuses:\nFirst Status%d\nSecond Status %d\nThird Status, %d\n", first_status, second_status, third_status);
+    if ((pid = fork()) > 0){
+        boolean passed;
+
+        first_status = detach(pid);
+        passed = (first_status == 0);
+
+        second_status = detach(pid);
+        passed &= (second_status == -1);
+        
+        third_status = detach(pid * 2);
+        passed &= (third_status == -1);
+                                
+        printf(1, "Test %s\n", passed ? "passed" : "failed");
     }
     exit(0);
 }

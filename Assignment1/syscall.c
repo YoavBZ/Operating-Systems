@@ -101,9 +101,9 @@ extern int sys_sbrk(void);
 extern int sys_sleep(void);
 extern int sys_unlink(void);
 extern int sys_wait(void);
-extern int sys_detach(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_detach(void);
 
 static int (*syscalls[])(void) = { //TODO: check if need to support arguments
 [SYS_fork]    sys_fork,

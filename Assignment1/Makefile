@@ -141,7 +141,7 @@ kernel: $(OBJS) entry.o entryother initcode kernel.ld
 	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
 
 ass1ds.o:
-	$(GPP) $(CPPFLAGS) -c ass1ds.cpp -o ass1ds.o
+	$(GPP) -std=gnu++11 $(CPPFLAGS) -c ass1ds.cpp -o ass1ds.o
 
 # kernelmemfs is a copy of kernel that maintains the
 # disk image in memory instead of writing to a disk.

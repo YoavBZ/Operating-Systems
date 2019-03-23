@@ -27,7 +27,7 @@ int
 sys_wait(void)
 {
   int * status;
-  if(argptr(0, (char**)&status,4) < 0)
+  if(argptr(0, (char**)&status, 4) < 0)
     return -1;
   return wait(status);
 
