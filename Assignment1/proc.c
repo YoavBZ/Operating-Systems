@@ -66,6 +66,10 @@ handleStateChange(struct proc *p, int nState){
           p->accumulator = 0;
           p->pid = nextpid++;
           p->waitingTime = 0;
+          p->perf.retime = 0;
+          p->perf.rutime = 0;
+          p->perf.stime = 0;
+          p->perf.ctime = ticks;
           break;
 
         case RUNNABLE:
@@ -87,6 +91,10 @@ handleStateChange(struct proc *p, int nState){
           minimizeProcAcc(p);
           p->pid = nextpid++;
           p->waitingTime = 0;
+          p->perf.retime = 0;
+          p->perf.rutime = 0;
+          p->perf.stime = 0;
+          p->perf.ctime = ticks;
           break;
 
         case RUNNABLE:
@@ -344,51 +352,133 @@ detach(int pid){
 // 1 - Round Robin, 2 - Priority, 3 - Extended Priority
 void
 policy(int policy){ 
-    struct proc * p;
   if(policy < 1 || policy > 3){
-    panic("bad policy choise");
+    panic("Policy choise should be between 1 to 3");
   }
   acquire(&ptable.lock);
-  if(policy == ROUND_ROBIN){
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      p->accumulator = 0;
-    }
-    pq.switchToRoundRobinPolicy();
-  }
-  else if(policy == PRIORITY){
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->priority == 0){
-        p->priority = 1;
+  switch(policy){
+    case ROUND_ROBIN:
+      for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        p->accumulator = 0;
       }
-    }
-    rrq.switchToPriorityQueuePolicy();
-  }
-  else{
-    rrq.switchToPriorityQueuePolicy();
+      if(!pq.switchToRoundRobinPolicy()){
+        panic("Couldn't switch to Round Robin policy");
+      }
+      break;
+    case PRIORITY:
+      for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->priority == 0){
+          p->priority = 1;
+        }
+      }
+      // No break here, since both PRIORITY & EXTENDED_PRIORITY should run line 367
+    case EXTENDED_PRIORITY:
+      if(!rrq.switchToPriorityQueuePolicy()){
+        panic("Couldn't switch to Priority / Extended Priority policy");
+      }
   }
   currPolicy = policy;
+  cprintf("Switched to policy %d\n", policy);
   release(&ptable.lock);
-  
 }
 
 void
 priority(int priority){
-  if (currPolicy == ROUND_ROBIN){
-    panic("Cannot change priority in Round Robin policay");
+  // Validating priority according to current policy
+  switch (currPolicy){
+    case ROUND_ROBIN:
+      panic("Cannot change priority while in Round Robin policy");
+    case PRIORITY:
+      if(priority < 1 || priority > 10){
+        panic("Bad priority ");
+      }
+      break;
+    case EXTENDED_PRIORITY:
+      if(priority < 0 || priority > 10){
+        panic("Bad priority");
+      }
   }
-  struct proc *curproc = myproc();
-  if(currPolicy != PRIORITY){
-    if(priority < 1 || priority > 10){
-      panic ("bad priority");
-    }
-  }
-  else{
-     if(priority < 0 || priority > 10){
-      panic ("bad priority");
-    }
-  }
+  // Updating priority
   acquire(&ptable.lock);
-  curproc->priority = priority;
+  myproc()->priority = priority;
+  release(&ptable.lock);
+}
+
+int
+wait_stat(int* status, struct perf * performance)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one.
+        pid = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        freevm(p->pgdir);
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        // Update performance
+        performance->ctime = p->perf.ctime;
+        performance->retime = p->perf.retime;
+        performance->rutime = p->perf.rutime;
+        performance->stime = p->perf.stime;
+        performance->ttime = p->perf.ttime;
+        // Reset times
+        p->perf.ctime = 0;
+        p->perf.retime = 0;
+        p->perf.rutime = 0;
+        p->perf.stime = 0;
+        p->perf.ttime = 0;
+        handleStateChange(p, UNUSED);
+        // updating status to the exit status of the child.
+        if(status != null){
+          *status = p->exitStatus;
+        }
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+void updateTime(){
+  acquire(&ptable.lock);
+  for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    switch (p->state){
+      case RUNNING:
+        p->perf.rutime++;
+        break;
+      case RUNNABLE:
+        p->perf.retime++;
+        break;
+      case SLEEPING:
+        p->perf.stime++;
+        break;
+      default:
+        break;
+    }
+  }
   release(&ptable.lock);
 }
 
@@ -432,6 +522,7 @@ exit(int status)
         wakeup1(initproc);
     }
   }
+  curproc->perf.ttime = ticks;
   // Jump into the scheduler, never to return.
   handleStateChange(curproc, ZOMBIE);
   sched();
@@ -466,6 +557,11 @@ wait(int* status)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
+        // Reset times
+        p->perf.ctime = 0;
+        p->perf.retime = 0;
+        p->perf.rutime = 0;
+        p->perf.stime = 0;
         handleStateChange(p, UNUSED);
         // updating status to the exit status of the child.
         if(status != null){

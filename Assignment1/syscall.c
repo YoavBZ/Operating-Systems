@@ -104,6 +104,9 @@ extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
 extern int sys_detach(void);
+extern int sys_policy(void);
+extern int sys_priority(void);
+extern int sys_wait_stat(void);
 
 static int (*syscalls[])(void) = { //TODO: check if need to support arguments
 [SYS_fork]    sys_fork,
@@ -128,6 +131,9 @@ static int (*syscalls[])(void) = { //TODO: check if need to support arguments
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_detach]  sys_detach,
+[SYS_policy]  sys_policy,
+[SYS_priority]  sys_priority,
+[SYS_wait_stat]  sys_wait_stat,
 };
 
 void

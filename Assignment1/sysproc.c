@@ -26,17 +26,17 @@ sys_exit(void)
 int
 sys_wait(void)
 {
-  int * status;
-  if(argptr(0, (char**)&status, 4) < 0)
+  int *status;
+  if(argptr(0, (char**)&status, sizeof(int)) < 0)
     return -1;
   return wait(status);
-
 }
 
 int
 sys_detach(void)
 {
   int pid;
+
   if(argint(0, &pid) < 0)
     return -1;
   return detach(pid);
@@ -57,11 +57,22 @@ int
 sys_priority(void)
 {
   int priorityValue;
-
+  
   if(argint(0, &priorityValue) < 0)
     return -1;
   priority(priorityValue);
   return 0;
+}
+
+int
+sys_wait_stat(void)
+{
+  int* status;
+  struct perf* performance;
+  
+  if(argptr(0, (char**)&status, sizeof(int)) < 0 || argptr(1, (char**)&performance, sizeof(struct perf)) < 0)
+    return -1;
+  return wait_stat(status, performance);
 }
 
 int

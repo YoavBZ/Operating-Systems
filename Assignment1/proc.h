@@ -16,7 +16,6 @@ struct cpu {
 #define PRIORITY 2
 #define EXTENDED_PRIORITY 3
 
-
 extern struct cpu cpus[NCPU];
 extern int ncpu;
 
@@ -41,6 +40,14 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct perf {
+int ctime;
+int ttime;
+int stime;
+int retime;
+int rutime;
+};
+
 // Per-process state
 struct proc {
   uint sz;                       // Size of process memory (bytes)
@@ -60,6 +67,7 @@ struct proc {
   long long accumulator;         // accumulator
   int priority;                  // priority
   long long waitingTime;         // waiting time 
+  struct perf perf;             // Performance Stats  
 };
 
 // Process memory is laid out contiguously, low addresses first:
