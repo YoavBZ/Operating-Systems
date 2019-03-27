@@ -74,7 +74,9 @@ handleStateChange(struct proc *p, int nState){
 
         case RUNNABLE:
           p->state = RUNNABLE;
-          rrq.enqueue(p);
+          if (!rrq.enqueue(p)){
+            panic("Couldn't add process to rrq!");
+          }
           break;
 
         default:
@@ -102,7 +104,7 @@ handleStateChange(struct proc *p, int nState){
             // Minimizing the process accumulator if switched from SLEEPING to RUNNABLE
             minimizeProcAcc(p);
           } 
-          if (p->state == RUNNING){
+          else if (p->state == RUNNING){
             p->accumulator += p->priority;
           }
           if(!pq.put(p)){
@@ -353,7 +355,7 @@ detach(int pid){
 void
 policy(int policy){ 
   if(policy < 1 || policy > 3){
-    panic("Policy choise should be between 1 to 3");
+    return;
   }
   acquire(&ptable.lock);
   switch(policy){
@@ -371,14 +373,13 @@ policy(int policy){
           p->priority = 1;
         }
       }
-      // No break here, since both PRIORITY & EXTENDED_PRIORITY should run line 367
+      // No break here, since both PRIORITY & EXTENDED_PRIORITY should run line 378
     case EXTENDED_PRIORITY:
-      if(!rrq.switchToPriorityQueuePolicy()){
+      if(currPolicy == ROUND_ROBIN && !rrq.switchToPriorityQueuePolicy()){
         panic("Couldn't switch to Priority / Extended Priority policy");
       }
   }
   currPolicy = policy;
-  cprintf("Switched to policy %d\n", policy);
   release(&ptable.lock);
 }
 
@@ -387,15 +388,15 @@ priority(int priority){
   // Validating priority according to current policy
   switch (currPolicy){
     case ROUND_ROBIN:
-      panic("Cannot change priority while in Round Robin policy");
+      return;
     case PRIORITY:
       if(priority < 1 || priority > 10){
-        panic("Bad priority ");
+        return;
       }
       break;
     case EXTENDED_PRIORITY:
       if(priority < 0 || priority > 10){
-        panic("Bad priority");
+        return;
       }
   }
   // Updating priority
@@ -562,6 +563,7 @@ wait(int* status)
         p->perf.retime = 0;
         p->perf.rutime = 0;
         p->perf.stime = 0;
+        p->perf.ttime = 0;
         handleStateChange(p, UNUSED);
         // updating status to the exit status of the child.
         if(status != null){
@@ -632,8 +634,8 @@ scheduler(void)
         } else {
           quantumTime = 0;
           p = getMaxWaitingTime();
-          if(!pq.extractProc(p)){
-            panic("Couldn't remove process from pq!");
+          if(p != null && !pq.extractProc(p)){
+            panic("Couldn't remove process from pq! (scheduler)");
           }
         }
     }
@@ -752,18 +754,6 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   handleStateChange(p, SLEEPING);
-
-  // if(p->state == RUNNING && !rpholder.remove(p)){
-  //   panic("remove from rpholder has a problem, function:sleep");
-  // }
-
-  // if(p->state == RUNNABLE && currPolicy == ROUND_ROBIN && !rrq.dequeue()){
-  //   panic("remove from rrq has a problem, function:sleep");
-  // }
-
-  // if(p->state == RUNNABLE && currPolicy !=ROUND_ROBIN && !pq.extractProc(p)){
-  //   panic("remove from pq has a problem, function:sleep");
-  // }
 
   sched();
 
