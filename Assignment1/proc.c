@@ -535,6 +535,7 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
     }
+    p = null;
     release(&ptable.lock);
   }
 }
@@ -651,16 +652,17 @@ sleep(void *chan, struct spinlock *lk)
   }
   // Go to sleep.
   p->chan = chan;
-
-  p->state = SLEEPING;
-
-  if(p->state == RUNNING && !rpholder.remove(p)){
+  
+ if(p->state == RUNNING && !rpholder.remove(p)){
     panic("remove from rpholder has a problem, function:sleep");
   }
-
   if(p->state == RUNNABLE && currPolicy == ROUND_ROBIN && !rrq.dequeue()){
     panic("remove from rrq has a problem, function:sleep");
   }
+  p->state = SLEEPING;
+
+ 
+  
 
   // if(p->state == RUNNABLE && currPolicy !=ROUND_ROBIN && !pq.extractProc(p)){
   //   panic("remove from pq has a problem, function:sleep");
