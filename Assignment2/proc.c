@@ -292,20 +292,23 @@ wait(void) {
                 continue;
             havekids = 1;
             if (p->state == ZOMBIE) {
+                pid = p->pid;
+                // Found one.
                 for (struct thread* t = p->threads; t < &p->threads[NTHREADS]; t++) {
-                    // Found one.
-                    pid = p->pid;
-                    kfree(p->kstack);
-                    p->kstack = 0;
-                    freevm(p->pgdir);
-                    p->pid = 0;
-                    p->parent = 0;
-                    p->name[0] = 0;
-                    p->killed = 0;
-                    p->state = UNUSED;
-                    release(&ptable.lock);
-                    return pid;
+                    kfree(t->kstack);
+                    t->kstack = 0;
+                    t->pid = 0;
+                    t->proc = 0;
+                    t->state = UNUSED;
                 }
+                p->name[0] = 0;
+                p->parent = 0;
+                p->pid = 0;
+                p->state = UNUSED;
+                p->killed = 0;
+                freevm(p->pgdir);
+                release(&ptable.lock);
+                return pid;
             }
         }
 
