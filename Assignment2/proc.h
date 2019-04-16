@@ -9,6 +9,7 @@ struct cpu {
     volatile uint started;       // Has the CPU started?
     int ncli;                    // Depth of pushcli nesting.
     int intena;                  // Were interrupts enabled before pushcli?
+    struct proc *proc;           // The process running on this cpu or null
     struct thread *thread;       // The thread running on this cpu or null
 };
 
@@ -67,7 +68,6 @@ struct proc {
     char name[16];               // Process name (debugging)
     struct thread threads[NTHREADS]; // proc Thread's array
     enum procstate state;        // proc state
-    struct spinlock lock;        // Process lock
 };
 
 // Process memory is laid out contiguously, low addresses first:
