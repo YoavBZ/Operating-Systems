@@ -668,7 +668,7 @@ procdump(void) {
     }
 }
 
-int kthread_create(void (*start_func)(), void * user_stack) { // in case of fail return non positive value
+int kthread_create(void (*start_func)(), void * stack) { // in case of fail return non positive value
     struct proc * p = myproc();
     struct thread * runningThread = mythread();
     struct thread * newThread;
@@ -681,7 +681,7 @@ int kthread_create(void (*start_func)(), void * user_stack) { // in case of fail
 
     *newThread->tf = *runningThread->tf;
     newThread->tf->eip = (uint)start_func;
-    newThread->tf->esp = (uint)user_stack;
+    newThread->tf->esp = (uint)stack;
     newThread->state = RUNNABLE;
     release(&p->proclock);
 

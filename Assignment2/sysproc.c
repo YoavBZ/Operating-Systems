@@ -89,3 +89,29 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int sys_kthread_create(void) {
+    void (*start_func)();
+    void* stack;
+    if(argptr(0, (char**)&start_func, sizeof(start_func))<0 || argptr(1, (char**)&stack, sizeof(stack))<0){
+        cprintf("bad arguments kthread create\n");
+        return -1;
+    }
+    return kthread_create(start_func, stack);
+}
+
+int sys_kthread_join(void) {
+    int thread_id;
+    if(argint(0, &thread_id) < 0)
+        return -1;
+    return kthread_join(thread_id);
+}
+
+int sys_kthread_id(){
+    return kthread_id();
+}
+
+int sys_kthread_exit(){
+    kthread_exit();
+    return 0;  // if exit bad throw panic.
+}
