@@ -151,7 +151,7 @@ switchkvm(void) {
 void
 switchuvm(struct thread *t) {
     if (t == 0)
-        panic("switchuvm: no process");
+        panic("switchuvm: no thread");
     if (t->kstack == 0)
         panic("switchuvm: no kstack");
     if (t->proc->pgdir == 0)
@@ -167,7 +167,7 @@ switchuvm(struct thread *t) {
     // forbids I/O instructions (e.g., inb and outb) from user space
     mycpu()->ts.iomb = (ushort) 0xFFFF;
     ltr(SEG_TSS << 3);
-    lcr3(V2P(t->proc->pgdir));  // switch to thread's address space
+  lcr3(V2P(t->proc->pgdir));  // switch to process's address space
     popcli();
 }
 

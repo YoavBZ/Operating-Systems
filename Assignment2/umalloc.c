@@ -24,7 +24,6 @@ static Header *freep;
 void
 free(void *ap)
 {
-  // TODO: Sync?
   Header *bp, *p;
 
   bp = (Header*)ap - 1;
@@ -64,7 +63,6 @@ morecore(uint nu)
 void*
 malloc(uint nbytes)
 {
-   // TODO: Sync?
   Header *p, *prevp;
   uint nunits;
 
