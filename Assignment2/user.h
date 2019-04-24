@@ -23,7 +23,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-int kthread_join(int thread id);
+int kthread_join(int thread_id);
 void kthread_exit(void);
 int kthread_id(void);
 int kthread_create(void (*start_func)(), void* stack);
