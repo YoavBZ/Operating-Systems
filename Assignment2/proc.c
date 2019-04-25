@@ -154,11 +154,14 @@ allocproc(void) {
         t->proc = p;
     }
     initlock(&p->procLock, "process lock");
+    acquire(&p->procLock);
     if (!allocthread(p)) {  //bad init
+        release(&p->procLock);
         release(&ptable.lock);
         return 0;
     }
     p->state = USED_P;
+    release(&p->procLock);
     release(&ptable.lock);
     return p;
 }
@@ -188,15 +191,14 @@ userinit(void) {
     safestrcpy(p->name, "initcode", sizeof(p->name));
     p->cwd = namei("/");
 
+
     // this assignment to p->state lets other cores
     // run this process. the acquire forces the above
     // writes to be visible, and the lock is also needed
     // because the assignment might not be atomic.
-    acquire(&ptable.lock);
     acquire(&p->procLock);
     t->state = RUNNABLE;
     release(&p->procLock);
-    release(&ptable.lock);
 }
 
 // Grow current process's memory by n bytes.
@@ -207,22 +209,22 @@ growproc(int n) {
     struct proc *curproc = myproc();
     struct thread *curthread = mythread();
 
-    acquire(&curproc->procLock);
+    acquire(&ptable.lock);
     sz = curproc->sz;
     if (n > 0) {
         if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) {
-            release(&curproc->procLock);
+            release(&ptable.lock);
             return -1;
         }
     } else if (n < 0) {
         if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) {
-            release(&curproc->procLock);
+            release(&ptable.lock);
             return -1;
         }
     }
     curproc->sz = sz;
     switchuvm(curthread);
-    release(&curproc->procLock);
+    release(&ptable.lock);
     return 0;
 }
 
@@ -253,7 +255,7 @@ fork(void) {
             t->state = UNUSED;
         }
         np->state = UNUSED_P;
-        release(&curproc->procLock);
+        release(&np->procLock);
         release(&ptable.lock);
         return -1;
     }
@@ -310,8 +312,9 @@ exitProcess() {
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
         if (p->parent == curproc) {
             p->parent = initproc;
-            if (p->state == ZOMBIE_P)
+            if (p->state == ZOMBIE_P){
                 wakeup1(initproc);
+            }
         }
     }
 
@@ -509,7 +512,6 @@ forkret(void) {
         iinit(ROOTDEV);
         initlog(ROOTDEV);
     }
-
     // Return to "caller", actually trapret (see allocproc).
 }
 
@@ -660,6 +662,34 @@ procdump(void) {
     }
 }
 
+int finish_all_threads() { //curproc lock must be hold here!!!!
+    struct proc *curproc = myproc();
+    struct thread *curthread = mythread();
+
+    for (struct thread *thread = curproc->threads; thread < &curproc->threads[NTHREADS]; thread++) {
+        if (thread->tid == curthread->tid) //pass curr thread
+            continue;
+        if (thread->state != UNUSED) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+
+void stop_threads() {
+    struct proc* curproc = myproc();
+    acquire(&curproc->procLock);
+    curproc->killed = 1; //kill the process, force threads to kill themself.
+
+    while(!finish_all_threads()){ //wait for  threads to exit while curthread is here!
+        sleep(curproc, &curproc->procLock);
+    }
+    curproc->killed = 0;
+    release(&curproc->procLock);
+}
+
+
 int kthread_create(void (*start_func)(), void *stack) { // in case of fail return non positive value
     struct thread *runningThread = mythread();
     struct thread *newThread;
@@ -670,7 +700,6 @@ int kthread_create(void (*start_func)(), void *stack) { // in case of fail retur
         release(&p->procLock);
         return -1;
     }
-
     *newThread->tf = *runningThread->tf;
     newThread->tf->eip = (uint) start_func;
     newThread->tf->esp = (uint) stack;
@@ -692,6 +721,12 @@ int kthread_join(int thread_id) {
                 // TODO: Remove ZOMBIE??
                 sleep(p, &p->procLock); //first variable is chan, second is curr holding lock.
             }
+            //if thread is zombie , change him to unused
+            kfree(t->kstack);
+            t->kstack = 0;
+            t->tid = 0;
+            t->state = UNUSED;
+
             release(&p->procLock);
             return 0;
         }
@@ -708,15 +743,15 @@ kthread_id() {
 void kthread_exit() {
     struct proc *curproc = myproc();
     struct thread *curthread = mythread();
-    curthread->state = ZOMBIE;
     acquire(&curproc->procLock);
+    curthread->state = ZOMBIE;
+    release(&curproc->procLock);
     if (isLastThread(curproc)) {
-        release(&curproc->procLock);
         exit();
     } else { //just release thread
-        release(&curproc->procLock);
         wakeup(curproc);
         acquire(&ptable.lock);
+        acquire(&curproc->procLock);
         sched();
         //should not be here.
         panic("kthread exit error");

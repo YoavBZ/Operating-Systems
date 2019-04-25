@@ -17,6 +17,7 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 extern int ncpu;
+void stop_threads(void);
 
 //PAGEBREAK: 17
 // Saved registers for kernel context switches.
