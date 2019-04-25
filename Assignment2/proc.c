@@ -27,14 +27,14 @@ static void wakeup1(void *chan);
 int isLastThread(struct proc *p) {
     int isLast = 1;
     struct thread *curthread = mythread();
-//    acquire(&ptable.lock);
+    acquire(&p->procLock);
     for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++) {
         if (t->tid != curthread->tid &&
             (t != curthread && t->state != UNUSED && t->state != ZOMBIE)) {
             isLast = 0;
         }
     }
-//    release(&ptable.lock);
+    release(&p->procLock);
     return isLast;
 }
 
@@ -235,12 +235,16 @@ fork(void) {
     struct proc *np;
     struct proc *curproc = myproc();
 
+    if (mythread()->proc != curproc) {
+        curproc = mythread()->proc;
+    }
+
     // Allocate process.
     if ((np = allocproc()) == 0) {
         return -1;
     }
     acquire(&ptable.lock);
-    acquire(&curproc->procLock);
+    acquire(&np->procLock);
     // Copy process state from proc.
     if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) {
         for (struct thread *t = np->threads; t < &np->threads[NTHREADS]; t++) {
@@ -312,6 +316,7 @@ exitProcess() {
     }
 
     // Jump into the scheduler, never to return.
+    acquire(&curproc->procLock);
     mythread()->state = ZOMBIE;
     curproc->state = ZOMBIE_P;
     sched();
@@ -329,12 +334,14 @@ exit(void) {
         panic("init exiting");
 
     acquire(&ptable.lock);
+    acquire(&curproc->procLock);
     if (!curproc->killed) {
         curproc->killed = 1;
     }
 
     curproc->state = TERMINATING_P;
     mythread()->state = ZOMBIE;
+    release(&curproc->procLock);
     release(&ptable.lock);
     // Exit process if it's the last thread
     if (isLastThread(curproc)) {
@@ -415,7 +422,7 @@ scheduler(void) {
         // Loop over process table looking for process to run.
         acquire(&ptable.lock);
         for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-            if (p->state == UNUSED_P || p->state == TERMINATING_P) {
+            if (p->state != USED_P) {
                 continue;
             }
             acquire(&p->procLock);
@@ -424,7 +431,7 @@ scheduler(void) {
                     continue;
                 }
 
-                // Switch to chosen process.  It is the process's job
+                // Switch to chosen thread.  It is the thread's job
                 // to release ptable.lock and then reacquire it
                 // before jumping back to us.
                 c->proc = p;
@@ -443,7 +450,6 @@ scheduler(void) {
             c->proc = 0;
         }
         release(&ptable.lock);
-
     }
 }
 
@@ -514,7 +520,7 @@ sleep(void *chan, struct spinlock *lk) {
     struct thread *t = mythread();
     struct proc *p = myproc();
 
-    if (t == 0)
+    if (p == 0 || t == 0)
         panic("sleep");
 
     if (lk == 0)
@@ -555,15 +561,14 @@ wakeup1(void *chan) {
     struct proc *p;
 
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        if (p->state != UNUSED_P) {
-            continue;
+        if (p->state == USED_P) {
+            acquire(&p->procLock);
+            for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++) {
+                if (t->state == SLEEPING && t->chan == chan)
+                    t->state = RUNNABLE;
+            }
+            release(&p->procLock);
         }
-        acquire(&p->procLock);
-        for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++) {
-            if (t->state == SLEEPING && t->chan == chan)
-                t->state = RUNNABLE;
-        }
-        release(&p->procLock);
     }
 }
 
