@@ -70,11 +70,10 @@ struct proc {
     char name[16];               // Process name (debugging)
     struct thread threads[NTHREADS]; // proc Thread's array
     enum procstate state;        // proc state
-    struct spinlock procLock;    // proc lock
 };
 
 enum mutexstate {
-    USED_MUTEX, UNUSED_MUTEX
+    UNUSED_MUTEX, USED_MUTEX
 };
 
 struct mutex {

@@ -539,7 +539,6 @@ fourfiles(void)
         printf(1, "create failed\n");
         exit();
       }
-        printf(1, "fourfiles test1\n");
       memset(buf, '0'+pi, 512);
       for(i = 0; i < 12; i++){
         if((n = write(fd, buf, 500)) != 500){
@@ -550,12 +549,9 @@ fourfiles(void)
       exit();
     }
   }
-    printf(1, "fourfiles test2\n");
   for(pi = 0; pi < 4; pi++){
-      printf(1, "wait%d\n",pi);
     wait();
   }
-    printf(1, "fourfiles test3\n");
   for(i = 0; i < 2; i++){
     fname = names[i];
     fd = open(fname, 0);
