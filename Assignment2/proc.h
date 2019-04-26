@@ -1,4 +1,5 @@
 #include "spinlock.h"
+#include "sleeplock.h"
 
 // Per-CPU state
 struct cpu {
@@ -76,10 +77,10 @@ enum mutexstate {
     USED_MUTEX, UNUSED_MUTEX
 };
 
-struct mutex_t{
-    mutexstate state;
+struct mutex {
+    enum mutexstate state;
     struct sleeplock slock;
-}
+};
 
 // Process memory is laid out contiguously, low addresses first:
 //   text

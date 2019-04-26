@@ -14,8 +14,8 @@ struct {
 } ptable;
 
 struct{
-    struct spinlock mutex_table_lock;
-    struct mutex_t mutexs[MAX_MUTEXES];
+    struct spinlock lock;
+    struct mutex mutexes[MAX_MUTEXES];
 } mutex_table;
 
 
@@ -774,21 +774,21 @@ int check_mutex_id_range_and_mutex_used(int mutex_id){
     if(!holding(&mutex_table.lock)){
         panic("not holding mutex table!");
     }
-    struct mutex_t* curmutex = mutex_table.mutexes[mutex_id];
-    if (curmutex->mstate != USED_MUTEX) {
+    struct mutex curmutex = mutex_table.mutexes[mutex_id];
+    if (curmutex.state != USED_MUTEX) {
         return 0;
     }
     return 1;
 }
 
 int
-kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread , change mstate to used and return mutex state id
+kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread , change state to used and return mutex state id
     acquire(&mutex_table.lock);
     for(uint i = 0; i < MAX_MUTEXES; i++){
-        struct mutex_t* curmutex = mutex_table.mutexes[i];
-        if(curmutex->mstate == UNUSED_MUTEX) {
-            curmutex->mstate = USED_MUTEX;
-            initsleeplock(curmutex->slock, "mutex lock");
+        struct mutex curmutex = mutex_table.mutexes[i];
+        if(curmutex.state == UNUSED_MUTEX) {
+            curmutex.state = USED_MUTEX;
+            initsleeplock(&curmutex.slock, "mutex lock");
             release(&mutex_table.lock);
             return i;
         }
@@ -798,47 +798,47 @@ kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread
 }
 
 int
-kthread_mutex_dealloc(int mutex_id) { //this func only dealloc mutex_id of the mutexes  , change mstate to unused and return 0 in case of success ,else -1
-    struct mutex_t* curmutex;
+kthread_mutex_dealloc(int mutex_id) { //this func only dealloc mutex_id of the mutexes  , change state to unused and return 0 in case of success ,else -1
+    struct mutex curmutex;
     acquire(&mutex_table.lock);
     if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = mutex_table.mutexes[mutex_id];
-    if(1 == curmutex->slock.locked){
+    if(1 == curmutex.slock.locked){
         release(&mutex_table.lock);
         return -1;
     }
-    curmutex->mstate = UNUSED_MUTEX;
+    curmutex.state = UNUSED_MUTEX;
     release(&mutex_table.lock);
     return 0;
 }
 
 int
 kthread_mutex_lock(int mutex_id) { //this func only lock sleep lock in index mutex_id of the mutexes ,return 0 in case of success ,else -1
-    struct mutex_t* curmutex;
+    struct mutex curmutex;
     acquire(&mutex_table.lock);
      if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = mutex_table.mutexes[mutex_id];
-    acquiresleep(&mutex->slock);
+    acquiresleep(&curmutex.slock);
     release(&mutex_table.lock);
     return 0;
 }
 
 int
 kthread_mutex_unlock(int mutex_id) { //this func only unlock sleep lock in index mutex_id of the mutexes ,return 0 in case of success ,else -1
-    struct mutex_t* curmutex;
+    struct mutex curmutex;
     acquire(&mutex_table.lock);
      if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = mutex_table.mutexes[mutex_id];
-    releasesleep(&mutex->slock);
+    releasesleep(&curmutex.slock);
     release(&mutex_table.lock);
     return 0;
 }
