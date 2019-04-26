@@ -71,6 +71,15 @@ struct proc {
     struct spinlock procLock;    // proc lock
 };
 
+enum mutexstate {
+    USED_MUTEX, UNUSED_MUTEX
+};
+
+struct mutex_t{
+    mutexstate state;
+    struct sleeplock slock;
+}
+
 // Process memory is laid out contiguously, low addresses first:
 //   text
 //   original data and bss
