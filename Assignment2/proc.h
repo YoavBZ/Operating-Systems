@@ -76,7 +76,8 @@ enum mutexstate {
     UNUSED_MUTEX, USED_MUTEX
 };
 
-struct mutex {
+struct kthread_mutex_t {
+    int tid;  //hold the thread id , or -1 if unused
     enum mutexstate state;
     struct sleeplock slock;
 };

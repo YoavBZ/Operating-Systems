@@ -15,7 +15,7 @@ struct {
 
 struct {
     struct spinlock lock;
-    struct mutex mutexes[MAX_MUTEXES];
+    struct kthread_mutex_t mutexes[MAX_MUTEXES];
 } mutex_table;
 
 
@@ -704,11 +704,13 @@ int kthread_join(int thread_id) {
                 sleep(p, &ptable.lock); //first variable is chan, second is curr holding lock.
             }
             //if thread is zombie , change him to unused
-            kfree(t->kstack);
-            t->kstack = 0;
-            t->tid = 0;
-            t->state = UNUSED;
-
+            if(t->state == ZOMBIE) {
+                kfree(t->kstack);
+                t->kstack = 0;
+                t->tid = 0;
+                t->proc = 0;
+                t->state = UNUSED;
+            } 
             release(&ptable.lock);
             return 0;
         }
@@ -722,12 +724,28 @@ kthread_id() {
     return mythread()->tid;
 }
 
+void dealloc_thread_mutexes() {
+    int curtid = mythread()->tid;
+    acquire(&mutex_table.lock);
+    for(int i =0; i < MAX_MUTEXES; i++) {
+        if(mutex_table.mutexes[i]->tid == curtid) {
+            if (1 == curmutex->slock.locked) {
+                releasesleep(curmutex->slock);
+            }
+            mutex_table.mutexes[i]->state = UNUSED_MUTEX;
+        }
+    }
+    release(&mutex_table.lock);
+}
+
+
 void kthread_exit() {
     struct proc *curproc = myproc();
     struct thread *curthread = mythread();
     acquire(&ptable.lock);
     curthread->state = ZOMBIE;
     release(&ptable.lock);
+    dealloc_thread_mutexes();
     if (isLastThread(curproc)) {
         exit();
     } else { //just release thread
@@ -760,6 +778,7 @@ kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread
         struct mutex *curmutex = &mutex_table.mutexes[i];
         if (curmutex->state == UNUSED_MUTEX) {
             curmutex->state = USED_MUTEX;
+            curmutex->tid = mythread()->tid;
             initsleeplock(&curmutex->slock, "mutex lock");
             release(&mutex_table.lock);
             return i;
