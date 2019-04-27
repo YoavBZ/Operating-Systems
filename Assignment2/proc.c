@@ -729,10 +729,12 @@ void dealloc_thread_mutexes() {
     acquire(&mutex_table.lock);
     for(int i =0; i < MAX_MUTEXES; i++) {
         if(mutex_table.mutexes[i]->tid == curtid) {
-            if (1 == curmutex->slock.locked) {
+            if (holdingsleep(curmutex->slock)) {
                 releasesleep(curmutex->slock);
             }
             mutex_table.mutexes[i]->state = UNUSED_MUTEX;
+            mutex_table.mutexes[i]->tid = -1;
+            
         }
     }
     release(&mutex_table.lock);
@@ -764,7 +766,7 @@ int check_mutex_id_range_and_mutex_used(int mutex_id) {
     if (!holding(&mutex_table.lock)) {
         panic("not holding mutex table!");
     }
-    struct mutex curmutex = mutex_table.mutexes[mutex_id];
+    struct kthread_mutex_t curmutex = mutex_table.mutexes[mutex_id];
     if (curmutex.state != USED_MUTEX) {
         return 0;
     }
@@ -775,7 +777,7 @@ int
 kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread , change state to used and return mutex state id
     acquire(&mutex_table.lock);
     for (uint i = 0; i < MAX_MUTEXES; i++) {
-        struct mutex *curmutex = &mutex_table.mutexes[i];
+        struct kthread_mutex_t *curmutex = &mutex_table.mutexes[i];
         if (curmutex->state == UNUSED_MUTEX) {
             curmutex->state = USED_MUTEX;
             curmutex->tid = mythread()->tid;
@@ -791,18 +793,19 @@ kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread
 //this func only dealloc mutex_id of the mutexes  , change state to unused and return 0 in case of success ,else -1
 int
 kthread_mutex_dealloc(int mutex_id) {
-    struct mutex *curmutex;
+    struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
     if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = &mutex_table.mutexes[mutex_id];
-    if (1 == curmutex->slock.locked) {
+    if (holdingsleep(curmutex->slock)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex->state = UNUSED_MUTEX;
+    mutex_table.mutexes[i]->tid = -1;
     release(&mutex_table.lock);
     cprintf("mutex number %d dealloc\n", mutex_id);
     return 0;
@@ -811,7 +814,7 @@ kthread_mutex_dealloc(int mutex_id) {
 //this func only lock sleep lock in index mutex_id of the mutexes ,return 0 in case of success ,else -1
 int
 kthread_mutex_lock(int mutex_id) {
-    struct mutex *curmutex;
+    struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
     if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
@@ -826,7 +829,7 @@ kthread_mutex_lock(int mutex_id) {
 //this func only unlock sleep lock in index mutex_id of the mutexes ,return 0 in case of success ,else -1
 int
 kthread_mutex_unlock(int mutex_id) {
-    struct mutex *curmutex;
+    struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
     if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
         release(&mutex_table.lock);
