@@ -725,15 +725,17 @@ kthread_id() {
 }
 
 void dealloc_thread_mutexes() {
+    struct kthread_mutex_t *curmutex;
     int curtid = mythread()->tid;
     acquire(&mutex_table.lock);
     for(int i =0; i < MAX_MUTEXES; i++) {
-        if(mutex_table.mutexes[i]->tid == curtid) {
-            if (holdingsleep(curmutex->slock)) {
-                releasesleep(curmutex->slock);
+        curmutex = &mutex_table.mutexes[i];
+        if(curmutex->tid == curtid) {
+            if (holdingsleep(&curmutex->slock)) {
+                releasesleep(&curmutex->slock);
             }
-            mutex_table.mutexes[i]->state = UNUSED_MUTEX;
-            mutex_table.mutexes[i]->tid = -1;
+            curmutex->state = UNUSED_MUTEX;
+            curmutex->tid = -1;
             
         }
     }
@@ -800,12 +802,12 @@ kthread_mutex_dealloc(int mutex_id) {
         return -1;
     }
     curmutex = &mutex_table.mutexes[mutex_id];
-    if (holdingsleep(curmutex->slock)) {
+    if (holdingsleep(&curmutex->slock)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex->state = UNUSED_MUTEX;
-    mutex_table.mutexes[i]->tid = -1;
+    mutex_table.mutexes[mutex_id].tid = -1;
     release(&mutex_table.lock);
     cprintf("mutex number %d dealloc\n", mutex_id);
     return 0;
