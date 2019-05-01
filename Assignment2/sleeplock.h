@@ -9,4 +9,6 @@ struct sleeplock {
     char *name;        // Name of lock.
     int tid;           // Thread holding lock
 };
+
+int is_locked_sleep(struct sleeplock*);
 #endif

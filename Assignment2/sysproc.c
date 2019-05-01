@@ -7,7 +7,6 @@
 #include "mmu.h"
 #include "proc.h"
 #include "kthread.h"
-#include "tournament_tree.h"
 
 int
 sys_fork(void) {
@@ -141,44 +140,4 @@ sys_kthread_mutex_unlock(void) {
     if (argint(0, &mutex_id) < 0)
         return -1;
     return kthread_mutex_unlock(mutex_id);
-}
-
-int
-sys_trnmnt_tree_alloc(void) {
-    int depth;
-    if (argint(0, &depth) < 0)
-        return -1;
-    return trnmnt_tree_alloc(depth);
-}
-
-int
-sys_trnmnt_tree_dealloc(void) {
-    trnmnt_tree *tree;
-    if (argptr(0, &tree, sizeof(tree)) < 0) {
-        cprintf("bad arguments trnmnt_tree_dealloc\n");
-        return -1;
-    }
-    return trnmnt_tree_dealloc(tree);
-}
-
-int
-sys_trnmnt_tree_acquire(void) {
-    trnmnt_tree *tree;
-    int id;
-    if (argint(0, &id) < 0 || argptr(0, &tree, sizeof(tree)) < 0) {
-        cprintf("bad arguments trnmnt_tree_acquire\n");
-        return -1;
-    }
-    return trnmnt_tree_acquire(tree, id);
-}
-
-int
-sys_trnmnt_tree_release(void) {
-    trnmnt_tree *tree;
-    int id;
-    if (argint(0, &id) < 0 || argptr(0, &tree, sizeof(tree)) < 0) {
-        cprintf("bad arguments trnmnt_tree_release\n");
-        return -1;
-    }
-    return trnmnt_tree_release(tree, id);
 }

@@ -111,10 +111,6 @@ extern int sys_kthread_mutex_alloc(void);
 extern int sys_kthread_mutex_dealloc(void);
 extern int sys_kthread_mutex_lock(void);
 extern int sys_kthread_mutex_unlock(void);
-extern int sys_trnmnt_tree_alloc(void);
-extern int sys_trnmnt_tree_dealloc(void);
-extern int sys_trnmnt_tree_acquire(void);
-extern int sys_trnmnt_tree_release(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]                      sys_fork,
@@ -146,10 +142,6 @@ static int (*syscalls[])(void) = {
 [SYS_kthread_mutex_dealloc]     sys_kthread_mutex_dealloc,
 [SYS_kthread_mutex_lock]        sys_kthread_mutex_lock,
 [SYS_kthread_mutex_unlock]      sys_kthread_mutex_unlock,
-[SYS_SYS_trnmnt_tree_alloc]     sys_trnmnt_tree_alloc,
-[SYS_trnmnt_tree_dealloc]       sys_trnmnt_tree_dealloc,
-[SYS_trnmnt_tree_acquire]       sys_trnmnt_tree_acquire,
-[SYS_trnmnt_tree_release]       sys_trnmnt_tree_release,
 };
 
 void
