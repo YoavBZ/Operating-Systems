@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "kthread.h"
+#include "tournament_tree.h"
 
 struct {
     struct spinlock lock;
@@ -671,6 +672,7 @@ void stop_threads() {
     release(&ptable.lock);
 }
 
+s
 
 int kthread_create(void (*start_func)(), void *stack) { // in case of fail return non positive value
     struct thread *runningThread = mythread();
@@ -704,13 +706,13 @@ int kthread_join(int thread_id) {
                 sleep(p, &ptable.lock); //first variable is chan, second is curr holding lock.
             }
             //if thread is zombie , change him to unused
-            if(t->state == ZOMBIE) {
+            if (t->state == ZOMBIE) {
                 kfree(t->kstack);
                 t->kstack = 0;
                 t->tid = 0;
                 t->proc = 0;
                 t->state = UNUSED;
-            } 
+            }
             release(&ptable.lock);
             return 0;
         }
@@ -728,15 +730,15 @@ void dealloc_thread_mutexes() {
     struct kthread_mutex_t *curmutex;
     int curtid = mythread()->tid;
     acquire(&mutex_table.lock);
-    for(int i =0; i < MAX_MUTEXES; i++) {
+    for (int i = 0; i < MAX_MUTEXES; i++) {
         curmutex = &mutex_table.mutexes[i];
-        if(curmutex->tid == curtid) {
+        if (curmutex->tid == curtid) {
             if (holdingsleep(&curmutex->slock)) {
                 releasesleep(&curmutex->slock);
             }
             curmutex->state = UNUSED_MUTEX;
             curmutex->tid = -1;
-            
+
         }
     }
     release(&mutex_table.lock);
@@ -840,5 +842,28 @@ kthread_mutex_unlock(int mutex_id) {
     curmutex = &mutex_table.mutexes[mutex_id];
     releasesleep(&curmutex->slock);
     release(&mutex_table.lock);
+    return 0;
+}
+
+trnmnt_tree *
+trnmnt_tree_alloc(int depth) {
+    if (depth < 1) {
+        return 0;
+    }
+    return 0;
+}
+
+int
+trnmnt_tree_dealloc(trnmnt_tree *tree) {
+    return 0;
+}
+
+int
+trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
+    return 0;
+}
+
+int
+trnmnt_tree_release(trnmnt_tree *tree, int ID) {
     return 0;
 }

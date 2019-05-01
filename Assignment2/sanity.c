@@ -3,26 +3,37 @@
 #include "kthread.h"
 
 
-static int gm;
+static int globalMutex;
 
 void start() {
     int mutex = kthread_mutex_alloc();
     kthread_mutex_lock(mutex);
-    kthread_mutex_lock(gm);
-    printf(1, "thread %d, mutex_id %d\n", kthread_id(), mutex);
-    kthread_mutex_unlock(gm);
+    // Lock global mutex to sync threads printing
+    kthread_mutex_lock(globalMutex);
+    printf(1, "ThreadID %d, MutexID %d\n", kthread_id(), mutex);
+    kthread_mutex_unlock(globalMutex);
     kthread_mutex_unlock(mutex);
     kthread_mutex_dealloc(mutex);
     kthread_exit();
 }
 
 int main() {
-    printf(1, "sanity: start\n");
-    gm = kthread_mutex_alloc();
-    for (int i = 0; i < 20; ++i) {
-        void *stack = malloc(MAX_STACK_SIZE);
-        kthread_create(start, stack);
+    globalMutex = kthread_mutex_alloc();
+    int threadsNum = 20;
+    void *stacks[threadsNum];
+    int threadIds[threadsNum]
+    printf(1, "Initiating %d threads\n", threadsNum);
+    for (int i = 0; i < threadsNum; ++i) {
+        stacks[i] = malloc(MAX_stacks_SIZE);
+        threadIds[i] = kthread_create(start, stacks[i]);
     }
-    kthread_mutex_dealloc(gm);
+    printf("Joining all threads, free stacks\n");
+    for (int i = 0; i < 20; ++i) {
+        kthread_join(threadIds[i]);
+        free(stacks[i]);
+    }
+    printf("All threads finished!\n");
+    printf("Trying to join a finished thread: join return value(should be -1) = %d\n", kthread_join(threadIds[0]));
+    kthread_mutex_dealloc(globalMutex);
     return 0;
 }
