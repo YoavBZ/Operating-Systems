@@ -9,13 +9,21 @@
 #define RIGHT_CHILD(i) (i * 2 + 2)
 #define NODES_NUM(depth) ((1 << depth) - 1)
 #define ID_TO_MUTEX_IDX(id) ((1 << depth) - 1 + id)
+#define THREADS_MAX(depth) (1 << depth)
 
 typedef struct trnmnt_tree {
     int depth;                  // The depth of the tree (the tree has 2^depth-1 nodes)
     int *mutexIds;              // A pointer mutex id's array.
     int treemutexid;
-    int tree_available;  
+    int *threads_in;            // hold which treads id are in
 } trnmnt_tree;
+
+int clear_allocated_mutexes(trnmnt_tree *tree, int index) {
+    for (int i = 0; i < index; i++) {
+        kthread_mutex_dealloc(tree->mutexIds[i]);
+    }
+}
+
 
 trnmnt_tree *
 trnmnt_tree_alloc(int depth) {
@@ -24,6 +32,7 @@ trnmnt_tree_alloc(int depth) {
     }
     int nodesNum = NODES_NUM(depth);
     int *mutexIds = malloc(nodesNum * sizeof(int));
+    int *threads_in = malloc(THREADS_MAX(depth) * sizeof(int));
     if (!mutexIds) {
         free(mutexIds);
         return 0;
@@ -32,27 +41,35 @@ trnmnt_tree_alloc(int depth) {
     trnmnt_tree *tree = malloc(sizeof(trnmnt_tree));
     tree->depth = depth;
     tree->mutexIds = mutexIds;
-    tree->treemutexid = kthread_mutex_alloc();
-    tree->tree_available = 1;
+    tree->threads_in = threads_in;
 
     // Init mutexes
     for (int i = 0; i < nodesNum; i++) {
         mutexIds[i] = kthread_mutex_alloc();
+        if(mutexIds[i] == -1){
+            clear_allocated_mutexes(tree, i);
+        }
     }
+    //init threads in 
+    for (int i=0; i < THREADS_MAX(depth); i++){
+        tree->threads_in[i] = 0;
+    }
+    tree->treemutexid = kthread_mutex_alloc();
     return tree;
 }
 
 int
 trnmnt_tree_dealloc(trnmnt_tree *tree) {
-    int result = kthread_mutex_lock(tree->treemutexid);
-    if (result < 0) {
-        return -1;
+    kthread_mutex_lock(tree->treemutexid);
+    for (int i = 0; i < THREADS_MAX(tree->depth); i++) {
+        if (tree->threads_in[i]) {
+             kthread_mutex_unlock(tree->treemutexid);
+             return -1;
+        }
     }
-    tree->tree_available = 0;
     kthread_mutex_unlock(tree->treemutexid);
-    while(kthread_mutex_dealloc(tree->treemutexid)!=0){};
-    
-    
+    while(kthread_mutex_dealloc(tree->treemutexid) != 0) {};
+
     if (!tree) {
         return -1;
     }
@@ -60,6 +77,7 @@ trnmnt_tree_dealloc(trnmnt_tree *tree) {
         kthread_mutex_dealloc(tree->mutexIds[i]);
     }
     free(tree->mutexIds);
+    free(tree->threads_in);
     free(tree);
     return 0;
 }
@@ -78,20 +96,21 @@ int trnmnt_tree_acquire_recursive(trnmnt_tree *tree, int mutexIdx) {
 
 int
 trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
-    int result = kthread_mutex_lock(tree->treemutexid);
-    if (result < 0) {
-        return -1;
-    }
-    if(!tree->tree_available){
-        kthread_mutex_unlock(result);
-        return -1;
-    }
-    kthread_mutex_unlock(result);
-    int depth = tree->depth;
-    if (ID < 0 || ID > NODES_NUM(depth)) {
+    if (ID < 0 || ID > THREADS_MAX(tree->depth)) {
         // Incorrect ID
         return -1;
     }
+
+    kthread_mutex_lock(tree->treemutexid);
+    if (tree->threads_in[ID]) {
+        kthread_mutex_unlock(tree->treemutexid);
+        return -1;
+    }
+    tree->threads_in[ID] = 1;
+    kthread_mutex_unlock(tree->treemutexid);
+
+    int depth = tree->depth;
+ 
     // Fetching the mutexId to be locked
     int mutexId = tree->mutexIds[PARENT(ID_TO_MUTEX_IDX(ID))];
     return trnmnt_tree_acquire_recursive(tree, mutexId);
@@ -99,15 +118,19 @@ trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
 
 int
 trnmnt_tree_release(trnmnt_tree *tree, int ID) {
-    int result = kthread_mutex_lock(tree->treemutexid);
-    if (result < 0) {
+    if (ID < 0 || ID > THREADS_MAX(tree->depth)) {
+        // Incorrect ID
         return -1;
     }
-    if(!tree->tree_available){
-        kthread_mutex_unlock(result);
-        return -1;
+    
+    kthread_mutex_lock(tree->treemutexid);
+    if (!tree->threads_in[ID]) {
+        kthread_mutex_unlock(tree->treemutexid);
+        return -1;  
     }
-    kthread_mutex_unlock(result);
+    tree->threads_in[ID] = 0;
+    kthread_mutex_unlock(tree->treemutexid);
+
 
     for (int i = 0; i < NODES_NUM(tree->depth); i++) {
         kthread_mutex_unlock(tree->mutexIds[i]);
