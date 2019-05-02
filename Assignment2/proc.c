@@ -29,7 +29,8 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
-
+void release_thread_mutexes();
+void dealloc_proc_mutexes();
 int isLastThread(struct proc *p) {
     int isLast = 1;
     struct thread *curthread = mythread();
@@ -318,12 +319,14 @@ exitProcess() {
     }
 
     // Jump into the scheduler, never to return.
+    dealloc_proc_mutexes();
+    mythread()->state = ZOMBIE;
     curproc->state = ZOMBIE_P;
     sched();
     panic("zombie exit");
 }
 
-void dealloc_thread_mutexes();
+
 
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
@@ -341,7 +344,7 @@ exit(void) {
     }
     mythread()->state = ZOMBIE;
     release(&ptable.lock);
-    dealloc_thread_mutexes();
+    release_thread_mutexes();
     // Exit process if it's the last thread
     if (isLastThread(curproc)) {
         exitProcess();
@@ -368,9 +371,11 @@ wait(void) {
                 pid = p->pid;
                 // Found one.
                 for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++) {
-                    if (t->state != UNUSED) {
-                        kfree(t->kstack);
-                        t->kstack = 0;
+                    if (t->state == ZOMBIE) {
+                        if(t->kstack) {
+                            kfree(t->kstack);
+                            t->kstack = 0;
+                        }
                         t->pid = 0;
                         t->proc = 0;
                         t->state = UNUSED;
@@ -732,7 +737,7 @@ kthread_id() {
     return mythread()->tid;
 }
 
-void dealloc_thread_mutexes() {
+void release_thread_mutexes() {
     struct kthread_mutex_t *curmutex;
     int curtid = mythread()->tid;
     acquire(&mutex_table.lock);
@@ -742,9 +747,20 @@ void dealloc_thread_mutexes() {
             if (holdingsleep(&curmutex->slock)) {
                 releasesleep(&curmutex->slock);
             }
-            curmutex->state = UNUSED_MUTEX;
             curmutex->tid = -1;
+        }
+    }
+    release(&mutex_table.lock);
+}
 
+void dealloc_proc_mutexes() {
+    struct kthread_mutex_t *curmutex;
+    int curpid = myproc()->pid;
+    acquire(&mutex_table.lock);
+    for (int i = 0; i < MAX_MUTEXES; i++) {
+        curmutex = &mutex_table.mutexes[i];
+        if (curmutex->pid == curpid) {  // Current thread is holding the mutex and should release it
+            curmutex->state = UNUSED_MUTEX;
         }
     }
     release(&mutex_table.lock);
@@ -754,22 +770,23 @@ void dealloc_thread_mutexes() {
 void kthread_exit() {
     struct proc *curproc = myproc();
     struct thread *curthread = mythread();
-    acquire(&ptable.lock);
-    curthread->state = ZOMBIE;
-    release(&ptable.lock);
     if (isLastThread(curproc)) {
+        acquire(&ptable.lock);
+        curthread->state = ZOMBIE;
+        release(&ptable.lock);
         exit();
     } else { //just release thread
-        dealloc_thread_mutexes();
+        release_thread_mutexes();
         wakeup(curproc);
         acquire(&ptable.lock);
+        curthread->state = ZOMBIE;
         sched();
         //should not be here.
         panic("kthread exit error");
     }
 }
 
-int check_mutex_id_range_and_mutex_used(int mutex_id) {
+int check_mutex_id_range_and_mutex_used_by_this_proc(int mutex_id) { //mutex_table must be held.
     if (mutex_id < 0 || mutex_id >= MAX_MUTEXES) {
         return 0;
     }
@@ -777,10 +794,17 @@ int check_mutex_id_range_and_mutex_used(int mutex_id) {
         panic("not holding mutex table!");
     }
     struct kthread_mutex_t curmutex = mutex_table.mutexes[mutex_id];
+    if(curmutex.pid != myproc()->pid){
+        return 0;
+    }
     if (curmutex.state != USED_MUTEX) {
         return 0;
     }
     return 1;
+}
+
+int is_this_thread_holding_mutex(struct kthread_mutex_t *curmutex) { //mutex_table must be held.
+    return (curmutex->tid == mythread()->tid);
 }
 
 int
@@ -790,7 +814,7 @@ kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread
         struct kthread_mutex_t *curmutex = &mutex_table.mutexes[i];
         if (curmutex->state == UNUSED_MUTEX) {
             curmutex->state = USED_MUTEX;
-            curmutex->tid = mythread()->tid;
+            curmutex->pid = myproc()->pid;
             initsleeplock(&curmutex->slock, "mutex lock");
             release(&mutex_table.lock);
             return i;
@@ -805,7 +829,7 @@ int
 kthread_mutex_dealloc(int mutex_id) {
     struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
-    if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
+    if (!check_mutex_id_range_and_mutex_used_by_this_proc(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
@@ -815,7 +839,7 @@ kthread_mutex_dealloc(int mutex_id) {
         return -1;
     }
     curmutex->state = UNUSED_MUTEX;
-    mutex_table.mutexes[mutex_id].tid = -1;
+    curmutex->pid = -1;
     release(&mutex_table.lock);
     return 0;
 }
@@ -825,11 +849,12 @@ int
 kthread_mutex_lock(int mutex_id) {
     struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
-    if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
+    if (!check_mutex_id_range_and_mutex_used_by_this_proc(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = &mutex_table.mutexes[mutex_id];
+    curmutex->tid = mythread()->tid;
     release(&mutex_table.lock);
     acquiresleep(&curmutex->slock);
     return 0;
@@ -840,11 +865,20 @@ int
 kthread_mutex_unlock(int mutex_id) {
     struct kthread_mutex_t *curmutex;
     acquire(&mutex_table.lock);
-    if (!check_mutex_id_range_and_mutex_used(mutex_id)) {
+    if (!check_mutex_id_range_and_mutex_used_by_this_proc(mutex_id)) {
         release(&mutex_table.lock);
         return -1;
     }
     curmutex = &mutex_table.mutexes[mutex_id];
+    if (!is_locked_sleep(&curmutex->slock)) { // verify that this lock is actually locked
+        release(&mutex_table.lock);
+        return -1;
+    }
+    if (!is_this_thread_holding_mutex(curmutex)) { // verify that this thread is holding the mutex
+        release(&mutex_table.lock);
+        return -1;
+    }
+    curmutex->tid = -1;
     releasesleep(&curmutex->slock);
     release(&mutex_table.lock);
     return 0;

@@ -12,7 +12,9 @@
 
 typedef struct trnmnt_tree {
     int depth;                  // The depth of the tree (the tree has 2^depth-1 nodes)
-    int *mutexIds;              // A pointer to
+    int *mutexIds;              // A pointer mutex id's array.
+    int treemutexid;
+    int tree_available;  
 } trnmnt_tree;
 
 trnmnt_tree *
@@ -30,6 +32,8 @@ trnmnt_tree_alloc(int depth) {
     trnmnt_tree *tree = malloc(sizeof(trnmnt_tree));
     tree->depth = depth;
     tree->mutexIds = mutexIds;
+    tree->treemutexid = kthread_mutex_alloc();
+    tree->tree_available = 1;
 
     // Init mutexes
     for (int i = 0; i < nodesNum; i++) {
@@ -40,6 +44,15 @@ trnmnt_tree_alloc(int depth) {
 
 int
 trnmnt_tree_dealloc(trnmnt_tree *tree) {
+    int result = kthread_mutex_lock(tree->treemutexid);
+    if (result < 0) {
+        return -1;
+    }
+    tree->tree_available = 0;
+    kthread_mutex_unlock(tree->treemutexid);
+    while(kthread_mutex_dealloc(tree->treemutexid)!=0){};
+    
+    
     if (!tree) {
         return -1;
     }
@@ -65,6 +78,15 @@ int trnmnt_tree_acquire_recursive(trnmnt_tree *tree, int mutexIdx) {
 
 int
 trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
+    int result = kthread_mutex_lock(tree->treemutexid);
+    if (result < 0) {
+        return -1;
+    }
+    if(!tree->tree_available){
+        kthread_mutex_unlock(result);
+        return -1;
+    }
+    kthread_mutex_unlock(result);
     int depth = tree->depth;
     if (ID < 0 || ID > NODES_NUM(depth)) {
         // Incorrect ID
@@ -77,6 +99,16 @@ trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
 
 int
 trnmnt_tree_release(trnmnt_tree *tree, int ID) {
+    int result = kthread_mutex_lock(tree->treemutexid);
+    if (result < 0) {
+        return -1;
+    }
+    if(!tree->tree_available){
+        kthread_mutex_unlock(result);
+        return -1;
+    }
+    kthread_mutex_unlock(result);
+
     for (int i = 0; i < NODES_NUM(tree->depth); i++) {
         kthread_mutex_unlock(tree->mutexIds[i]);
     }
