@@ -52,7 +52,6 @@ holdingsleep(struct sleeplock *lk)
   return r;
 }
 
-
 int
 is_locked_sleep(struct sleeplock *lk)
 {
