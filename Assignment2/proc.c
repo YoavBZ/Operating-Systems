@@ -31,6 +31,7 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 void release_thread_mutexes();
 void dealloc_proc_mutexes();
+
 int isLastThread(struct proc *p) {
     int isLast = 1;
     struct thread *curthread = mythread();
@@ -341,6 +342,11 @@ exit(void) {
     acquire(&ptable.lock);
     if (!curproc->killed) {
         curproc->killed = 1;
+    }
+    for (struct thread *t = curproc->threads; t < &curproc->threads[NTHREADS]; t++) {
+        if (t->state == SLEEPING) {
+            t->state = RUNNABLE;
+        }
     }
     mythread()->state = ZOMBIE;
     release(&ptable.lock);
@@ -666,10 +672,20 @@ void stop_threads() {
     if (!holding(&ptable.lock)) {
         acquire(&ptable.lock);
     }
+    if(curproc->killed){
+        release(&ptable.lock);
+        kthread_exit();
+    }
+    for (struct thread *t = curproc->threads; t < &curproc->threads[NTHREADS]; t++) {
+        if (t->state == SLEEPING) {
+            t->state = RUNNABLE;
+        }
+    }
     curproc->killed = 1; //kill the process, force threads to kill themself.
     wakeup1(curproc);
     while (!finish_all_threads()) { //wait for  threads to exit while curthread is here!
         sleep(curproc, &ptable.lock);
+
     }
     for (struct thread *thread = curproc->threads; thread < &curproc->threads[NTHREADS]; thread++) {
         if (thread->state == ZOMBIE) {
@@ -714,11 +730,17 @@ int kthread_join(int thread_id) {
     for (t = p->threads; t < &p->threads[NTHREADS]; t++) {
         if (t->tid == thread_id) {  //found
             while (t->state != UNUSED && t->state != ZOMBIE) {
+                if(p->killed){
+                    release(&ptable.lock);
+                    kthread_exit();
+                }
                 sleep(p, &ptable.lock); //first variable is chan, second is curr holding lock.
+
             }
             //if thread is zombie , change him to unused
             if (t->state == ZOMBIE) {
-                kfree(t->kstack);
+                if(t->kstack)
+                    kfree(t->kstack);
                 t->kstack = 0;
                 t->tid = 0;
                 t->proc = 0;
@@ -803,9 +825,6 @@ int check_mutex_id_range_and_mutex_used_by_this_proc(int mutex_id) { //mutex_tab
     return 1;
 }
 
-int is_this_thread_holding_mutex(struct kthread_mutex_t *curmutex) { //mutex_table must be held.
-    return (curmutex->tid == mythread()->tid);
-}
 
 int
 kthread_mutex_alloc() { //this func only alloc one of the mutexes to curr thread , change state to used and return mutex state id
@@ -853,10 +872,17 @@ kthread_mutex_lock(int mutex_id) {
         release(&mutex_table.lock);
         return -1;
     }
+
     curmutex = &mutex_table.mutexes[mutex_id];
-    curmutex->tid = mythread()->tid;
+    if(curmutex->tid == mythread()->tid){
+        release(&mutex_table.lock);
+        return -1;
+    }
     release(&mutex_table.lock);
     acquiresleep(&curmutex->slock);
+    acquire(&mutex_table.lock);
+    curmutex->tid = mythread()->tid;
+    release(&mutex_table.lock);
     return 0;
 }
 
@@ -874,12 +900,12 @@ kthread_mutex_unlock(int mutex_id) {
         release(&mutex_table.lock);
         return -1;
     }
-    if (!is_this_thread_holding_mutex(curmutex)) { // verify that this thread is holding the mutex
+    if (curmutex->tid != mythread()->tid) { // verify that this thread is holding the mutex
         release(&mutex_table.lock);
         return -1;
     }
-    curmutex->tid = -1;
     releasesleep(&curmutex->slock);
+    curmutex->tid = -1;
     release(&mutex_table.lock);
     return 0;
 }
