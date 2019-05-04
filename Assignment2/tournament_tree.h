@@ -123,7 +123,7 @@ trnmnt_tree_dealloc(trnmnt_tree *tree) {
 int trnmnt_tree_acquire_recursive(trnmnt_tree *tree, int mutexIdx) {
     if (mutexIdx == 0) {
         int res = kthread_mutex_lock(tree->mutexIds[mutexIdx]);
-        if (res >= 0){
+        if (res >= 0) {
             kthread_mutex_lock(tree->treemutexid);
             tree->threads_holding[0] = kthread_id();
             kthread_mutex_unlock(tree->treemutexid);
@@ -156,8 +156,8 @@ trnmnt_tree_acquire(trnmnt_tree *tree, int ID) {
         kthread_mutex_unlock(tree->treemutexid);
         return -1;
     }
-    for (int i = 0; i < NODES_NUM(tree->depth); i ++) {
-        if(tree->threads_holding[i] == kthread_id()){
+    for (int i = 0; i < NODES_NUM(tree->depth); i++) {
+        if (tree->threads_holding[i] == kthread_id()) {
             kthread_mutex_unlock(tree->treemutexid);
             return -1;
         }
@@ -188,18 +188,16 @@ trnmnt_tree_release(trnmnt_tree *tree, int ID) {
     tree->threads_in[ID] = -1;
     int i = 0;
     while (i < NODES_NUM(tree->depth)) {
-        if(kthread_mutex_unlock(tree->mutexIds[i]) == 0) {
+        if (kthread_mutex_unlock(tree->mutexIds[i]) == 0) {
             tree->threads_holding[i] = -1;
         }
-        if((tree->threads_holding[LEFT_CHILD(i)]) == my_id) {
+        if ((tree->threads_holding[LEFT_CHILD(i)]) == my_id) {
             i = LEFT_CHILD(i);
         } else {
             i = RIGHT_CHILD(i);
         }
     }
     kthread_mutex_unlock(tree->treemutexid);
-
-
     return 0;
 }
 
